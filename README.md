@@ -11,4 +11,6 @@ This plugin depends on the following software packages:
 
 ## License
 
+Copyright (C) 2014 Che-Huai Lin
+
 This program is licensed under the [MIT License](http://opensource.org/licenses/MIT)
