@@ -1,0 +1,7 @@
+base   authpwauth
+author Che-Huai Lin
+email  lzh9102@gmail.com
+date   2014-04-03
+name   pwauth plugin
+desc   Provides authentication using the pwauth utility
+url    none
