@@ -6,6 +6,7 @@ if(!defined('DOKU_INC')) die();
  *
  * @license   MIT License (http://opensource.org/licenses/MIT)
  * @author    Che-Huai Lin <lzh9102@gmail.com>
+ * @author    Jamil Navarro <jamilnavarro@gmail.com>
  */
 class auth_plugin_authpwauth extends DokuWiki_Auth_Plugin {
 	private $pwauth_path;
@@ -123,13 +124,14 @@ class auth_plugin_authpwauth extends DokuWiki_Auth_Plugin {
 		// the format of output is as follows:
 		// <user> : <group1> <group2> <group3> ...
 		$output = shell_exec("groups " . escapeshellarg($user));
-		$fields = explode(" ", $output);
-		// fields[0] = <user>, field[1] = ':', field[2] = <group1>, ...
-		// strip fields[0] and fields[1] to get the group array
-		if (count($fields) < 2) { // error
-			return false;
-		}
-		$groups = array_slice($fields, 2);
+		$output = trim($output); //get rid of newline
+		
+		// userstring = <user>, groupstring = <group1> <group2> <group3> ...
+		list($userstring,$groupstring) = explode( ":", $output);
+		
+		//groups[0] = <group1>, groups[1] = <group2>, groups[2] = <group3>...
+		$groups = explode(" ",trim($groupstring)); //remove leading space from $groupstring, then split
+		
 		return $groups;
 	}
 
