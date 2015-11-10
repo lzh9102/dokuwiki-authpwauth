@@ -11,6 +11,7 @@ if(!defined('DOKU_INC')) die();
 class auth_plugin_authpwauth extends DokuWiki_Auth_Plugin {
 	private $pwauth_path;
 	private $passwd_path;
+	private $email_domain_name;
 
 	public function __construct() {
 		parent::__construct();
@@ -18,6 +19,7 @@ class auth_plugin_authpwauth extends DokuWiki_Auth_Plugin {
 		// check pwauth executable
 		$this->pwauth_path = $this->getConf('pwauth_path');
 		$this->passwd_path = $this->getConf('passwd_path');
+		$this->email_domain_name = $this->getConf('email_domain_name');
 		if (is_executable($this->pwauth_path)) {
 			$this->cando['addUser']      = false;
 			$this->cando['delUser']      = false;
@@ -223,7 +225,20 @@ class auth_plugin_authpwauth extends DokuWiki_Auth_Plugin {
 	}
 
 	private function getUserMail($user){
-		return false;
+		// check if the email domain name is set
+		if ($this->email_domain_name == false) {
+			return false;
+		}
+		
+		// check if the user exists
+		$userinfo = posix_getpwnam($user);
+		if ($userinfo === false) {
+			return false;
+		}
+		
+		$username = $userinfo["name"]; // get username from userinfo
+		$email = $username . "@" . $this->email_domain_name;
+		return $email;
 	}
 
 	/**
