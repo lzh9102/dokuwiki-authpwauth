@@ -13,4 +13,6 @@ This plugin depends on the following software packages:
 
 Copyright (C) 2014 Che-Huai Lin
 
+Copyright (C) 2015 Jamil Navarro
+
 This program is licensed under the [MIT License](http://opensource.org/licenses/MIT)

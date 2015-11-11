@@ -6,15 +6,20 @@ if(!defined('DOKU_INC')) die();
  *
  * @license   MIT License (http://opensource.org/licenses/MIT)
  * @author    Che-Huai Lin <lzh9102@gmail.com>
+ * @author    Jamil Navarro <jamilnavarro@gmail.com>
  */
 class auth_plugin_authpwauth extends DokuWiki_Auth_Plugin {
 	private $pwauth_path;
+	private $passwd_path;
+	private $email_domain_name;
 
 	public function __construct() {
 		parent::__construct();
 
 		// check pwauth executable
 		$this->pwauth_path = $this->getConf('pwauth_path');
+		$this->passwd_path = $this->getConf('passwd_path');
+		$this->email_domain_name = $this->getConf('email_domain_name');
 		if (is_executable($this->pwauth_path)) {
 			$this->cando['addUser']      = false;
 			$this->cando['delUser']      = false;
@@ -23,8 +28,15 @@ class auth_plugin_authpwauth extends DokuWiki_Auth_Plugin {
 			$this->cando['modName']      = false;
 			$this->cando['modMail']      = false;
 			$this->cando['modGroups']    = false;
-			$this->cando['getUsers']     = false;
-			$this->cando['getUserCount'] = false;
+			
+			if (is_readable($this->passwd_path)) {
+				$this->cando['getUsers']     = true;
+				$this->cando['getUserCount'] = true;
+			} else {
+				$this->cando['getUsers']     = false;
+				$this->cando['getUserCount'] = false;
+			}
+			
 			$this->cando['getGroups']    = false;
 			$this->cando['external']     = false;
 			$this->cando['logout']       = true;
@@ -109,6 +121,84 @@ class auth_plugin_authpwauth extends DokuWiki_Auth_Plugin {
 		// do nothing
 	}
 
+	/**
+	 * Return a count of the number of user which meet $filter criteria
+	 *
+	 * @author  Jamil Navarro <jamilnavarro@gmail.com>
+	 *
+	 * @param   array $filter
+	 * @return  int
+	 */
+	public function getUserCount($filter = array()) {
+		
+		$handle = fopen($this->passwd_path, "r");
+		$count = 0;
+		if ($handle) {
+			
+			while (($line = fgets($handle)) !== false) {
+				list($user,$x,$uid,$gid,$GECOS,$home,$shell) = explode(":",trim($line));
+				// Skip root and service users
+				if (in_array( $shell, array( "/bin/false", "/usr/sbin/nologin", "/bin/sync")) || $user == "root") {
+					continue;
+				}
+				
+				$info = $this->getUserData($user);
+				if($this->_applyFilter($user, $info, $filter)) {
+					$count++;
+				}
+			}
+		}
+		fclose($handle);
+		return $count;
+	}
+
+	/*
+	 * Bulk retrieval of user data
+	 *
+	 * @author  Jamil Navarro <jamilnavarro@gmail.com>
+	 *
+	 * @param   int     $start      index of first user to be returned
+	 * @param   int     $limit      max number of users to be returned, 0 for unlimited
+	 * @param   array   $filter     array of field/pattern pairs, null for no filter
+	 * @return  array   list of userinfo (refer getUserData for internal userinfo details)
+	 */
+	public function retrieveUsers($start = 0, $limit = 0, $filter = array()) {
+		
+		$handle = fopen($this->passwd_path, "r");
+		
+		//return false on bad params
+		if ( $start < 0 || $limit < 0 ) {
+			return false;
+		}
+		
+		$out = array();
+		if ($handle) {
+			$i = 0;
+			$count = 0;
+			
+			while (($line = fgets($handle)) !== false) {
+				list($user,$x,$uid,$gid,$GECOS,$home,$shell) = explode(":",trim($line));
+				// Skip root and service users
+				if (in_array( $shell, array( "/bin/false", "/usr/sbin/nologin", "/bin/sync")) || $user == "root") {
+					continue;
+				}
+				
+				$info = $this->getUserData($user);
+				if($this->_applyFilter($user, $info, $filter)) {
+					if($i >= $start) {
+						$out[$user] = $info;
+						$count++;
+						if(($limit > 0) && ($count >= $limit)) break;
+					}
+					$i++;
+				}
+				
+			}
+		} 
+		fclose($handle);
+		return $out;
+	}
+
 	/* List all available groups for a user
 	 *
 	 * @param string $user loginname
@@ -123,18 +213,61 @@ class auth_plugin_authpwauth extends DokuWiki_Auth_Plugin {
 		// the format of output is as follows:
 		// <user> : <group1> <group2> <group3> ...
 		$output = shell_exec("groups " . escapeshellarg($user));
-		$fields = explode(" ", $output);
-		// fields[0] = <user>, field[1] = ':', field[2] = <group1>, ...
-		// strip fields[0] and fields[1] to get the group array
-		if (count($fields) < 2) { // error
-			return false;
-		}
-		$groups = array_slice($fields, 2);
+		$output = trim($output); //get rid of newline
+		
+		// userstring = <user>, groupstring = <group1> <group2> <group3> ...
+		list($userstring,$groupstring) = explode( ":", $output);
+		
+		//groups[0] = <group1>, groups[1] = <group2>, groups[2] = <group3>...
+		$groups = explode(" ",trim($groupstring)); //remove leading space from $groupstring, then split
+		
 		return $groups;
 	}
 
 	private function getUserMail($user){
-		return false;
+		// check if the email domain name is set
+		if ($this->email_domain_name == false) {
+			return false;
+		}
+		
+		// check if the user exists
+		$userinfo = posix_getpwnam($user);
+		if ($userinfo === false) {
+			return false;
+		}
+		
+		$username = $userinfo["name"]; // get username from userinfo
+		$email = $username . "@" . $this->email_domain_name;
+		return $email;
+	}
+
+	/**
+	 * return true if $user + $info match $filter criteria, false otherwise
+	 *
+	 * @author  Jamil Navarro <jamilnavarro@gmail.com>
+	 *
+	 * @param   string $user User login
+	 * @param   array  $info User's userinfo array
+	 * @return  bool
+	 */
+	function _applyFilter($user, $info, $filter) {
+		foreach($filter as $key => $pattern) {
+			//sanitize pattern for use as regex
+			$pattern = '/'.str_replace('/', '\/', $pattern).'/i';
+			
+			if($key == 'user') {
+				if(!preg_match($pattern, $user)) return false;
+			} else if($key == 'grps') {
+				if(!count(preg_grep($pattern, $info['grps']))) { 
+					return false;
+				}
+			} else {
+				if(!preg_match($pattern, $info[$key])) {
+					return false;
+				}
+			}
+		}
+		return true;
 	}
 }
 ?>
